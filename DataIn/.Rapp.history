@@ -1,0 +1,5 @@
+load("/Users/mirandawork/Desktop/northumberlandwaterquality/DataIn/DataStreamALL.Rds")
+load("/Users/mirandawork/Desktop/northumberlandwaterquality/DataIn/ECCCLocations.Rds")
+load("/Users/mirandawork/Desktop/northumberlandwaterquality/DataIn/TidyData.Rds")
+load("/Users/mirandawork/Desktop/northumberlandwaterquality/DataIn/MetaData.Rds")
+load("/Users/mirandawork/Desktop/northumberlandwaterquality/DataIn/ECCCData.Rds")
