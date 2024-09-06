@@ -1,0 +1,272 @@
+---
+title: "WeatherCanImport"
+author: 
+- Miranda Corkum^1^
+- Emma Sutherland^1^ 
+- Naaman Omar^1^
+- Douglas Campbell^1^*
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+bibliography: [RPackageCitations.bib, packages.bib]
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by the Canada Research Chairs.
+ES was supported by the New Brunswick Wildlife Trust Fund and a Cleantech Internship.  
+NO was supported by
+DAC was supported by the Canada Research Chairs.
+
+
+# Introduction
+
+This script uses packages to support direct import of Environment and Climate Change Canada weather (and tide) data into R. New columns are added generating variables used in a Shiny app (Code/"Facet_app_WQ.R") for data exploration. Weather data are saved as TidiedData/"KouchWeatherDay.Rds", "ShediacWeatherDay.Rds" for further use in Code/"DataClean.Rmd".
+
+
+# Materials and Methods
+
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Update Weathercan data *only needs to be done occassionally*
+These packages need to be installed to update Weathercan data. They are installed separately because they are not part of the CRAN repository.
+Update weathercan to 0.7.1 (September 20, 2023)
+https://github.com/ropensci/weathercan
+https://docs.ropensci.org/weathercan/
+```{r install packages}
+#install.packages("weathercan", 
+                 #repos = c("https://ropensci.r-universe.dev", 
+                           #"https://cloud.r-project.org"))
+```
+
+
+## Load libraries
+Set up libraries (or 'packages') - these contain additions to base R
+Install all the packages in the tidyverse by running install. packages("tidyverse"). Run library(tidyverse) to load the core tidyverse and make it available in your current R session.
+Note - lubridate is now part of Tidyverse version 2 or later.
+```{r load libraries, include = FALSE}
+library(tidyverse)
+
+library(weathercan)
+
+#Package 'lutz' and its dependency, 'sf', are required to get timezones for the updated stations dataframe.
+library(lutz)
+
+```
+
+## Citations of software packages
+Analysis was done using the 'tidyverse' [@R-tidyverse], 'weathercan' [@R-weathercan] and 'lutz' [@R-lutz] packages. 
+Keep this chunk commented out or it will overwrite the final manuscript version of the .bib file.
+```{r cite packages}
+#knitr::write_bib(c('tidyverse', 'weathercan', 'lutz'), 'packages.bib')
+```
+
+##Update Weathercan station data to get the most recent data
+Requires 'lutz' package for timezones.
+```{r Weathercan update}
+#stations_dl()
+```
+
+## Project Variables  
+Assign project-specific values to variables
+*Processed data contains any data that has been modified to include new columns etc. It can also contain the output of many files merged together.
+*Tidied data contains a clean version of the raw data (Correct file names, dates in the right format etc).
+*Do not use hard file path - not cross-platform compatible - use R functions to construct...
+```{r set variables}
+Project <- "northumberlandwaterquality"
+DataIn <- file.path("..", "DataIn")
+ProcessedData <- "ProcessedData"
+Figures <- file.path("..", "Figures")
+TidiedData <- file.path("..", "TidiedData")
+
+EnCanStation1 <- "KOUCHIBOUGUAC"
+Latitude1 <- 46.79
+Longitude1 <- -65.01
+
+EnCanStation2 <-"MONCTON"
+Latitude2 <- 46.11
+Longitude2 <- 64.68
+
+Start <- 20100101000000
+End <-Sys.time()
+#TrimStart <- 20200401000000
+#TrimEnd <- 20200501000000
+#TideTolerance <- 5
+  
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+
+```
+
+## Search for Enviroment Canada weather station
+```{r weather data station}
+#search for StationNames containing the value of EnCanStation set above
+StationNames1 <- weathercan::stations_search(EnCanStation1)
+#StationNames1
+
+stations_search("Kouchibouguac", interval = "day")
+```
+
+StationID `r as.character(StationNames$station_id[1])` based upon search for `r EnCanStation`.
+
+```{r weather data station}
+#search for StationNames containing the value of EnCanStation set above
+StationNames2 <- weathercan::stations_search(EnCanStation2)
+#StationNames2
+
+stations_search("MONCTON", interval = "day")
+```
+
+## Download Environment Canada weather data - Kouchibouguac
+ECCC has shellfish survey data for Kouchibouguac starting 1985 to 2020 (database last accessed May 2023).
+P. Godin - has a data technician looking into 2021-23 data, as it should be posted almost to date.
+*Currently have data from 1991 + 2000-2020 in DataStream dataset.
+Access daily weather data for date range 2000 to present 
+**24May2023 added data for 2015 to 2020 = add Station ID 54538 and bind.
+
+Station ID 6187: 1972-1995
+Station ID 54538: 2016-2023
+Station ID 26968: 1995-2018
+
+```{r weather import}
+#Be careful; time is reported as AST without ADT 
+#This weather station ID contains daily data ranging from 1995 to 2018: call data for 2001 to 2015 (change to 95 if dataset is expanded to include more data)
+KouchWeatherDay2000 <- weathercan::weather_dl(station_ids = 26968, start =  "2000-01-01", end = "2015-12-31", interval = "day")
+
+#Call data interval "hour": 
+
+#KouchWeatherHour <- weathercan::weather_dl(station_ids = 26968, start =  "2000-01-01", end = "2015-12-31", interval = "hour")
+
+#This weather station ID contains data ranging from 2016 to 2023
+KouchWeatherDay2016 <- weathercan::weather_dl(station_ids = 54538, start =  "2016-01-01", end = "2022-12-31", interval = "day")
+
+#This weather station ID contains data ranging from 1972 to 1995: call data from 1991 to 1994
+#KouchWeatherDay2 <- weathercan::weather_dl(station_ids = 6187, start =  "1991-01-01", end = "1994-12-31", interval = "day")
+
+#Combine 2 data frames with the same column names using rbind: 
+
+KouchWeatherDay <- rbind(KouchWeatherDay2000, KouchWeatherDay2016)
+
+```
+
+#DC 4Apr2023 - A work around for: 
+1) total precip - 24/48 hr lag and summing across days (48/72 hrs counting sample day)
+2) spd_max_gust (wind) - 24/48 hr lag and average for 48/72 hrs
+3) mean_temp - 24/48 hr lag and average "mean_temp" for 48/72 hrs
+
+#No wind data available for Kouch in current date window
+
+```{r set timezone add columns}
+#force_tz is a lubridate function to set a timezone for daily measurements
+
+KouchWeatherDay <- KouchWeatherDay %>%
+  mutate(date = force_tz(ymd(date),"America/Halifax")) %>%
+  mutate(precip_lag24 = lag(total_precip, n = 1L)) %>%
+  mutate(precip_lag48 = lag(total_precip, n = 2L)) %>%
+  mutate(precip_sum48 = total_precip + precip_lag24) %>%
+  mutate(precip_prior48 = precip_lag24 + precip_lag48) %>%
+  mutate(precip_sum72 = total_precip + precip_lag24 + precip_lag48) %>%
+  mutate(spd_max_gust_lag24 = lag(spd_max_gust, n = 1L)) %>%
+  mutate(spd_max_gust_lag48 = lag(spd_max_gust, n = 2L)) %>%
+  mutate(spd_max_gust_AVG48 = (spd_max_gust + spd_max_gust_lag24)/2) %>%
+  mutate(spd_max_gust_AVG72 = (spd_max_gust + spd_max_gust_lag24 + spd_max_gust_lag48)/3) %>%
+  mutate(mean_temp_lag24 = lag(mean_temp, n = 1L)) %>%
+  mutate(mean_temp_lag48 = lag(mean_temp, n = 2L)) %>%
+  mutate(mean_temp_AVG48 = (mean_temp + mean_temp_lag24)/2) %>%
+  mutate(mean_temp_prior48 = (mean_temp_lag24 + mean_temp_lag48)/2) %>%
+  mutate(mean_temp_AVG72 = (mean_temp + mean_temp_lag24 + mean_temp_lag48)/3)
+ 
+```
+
+## Inspect the imported ECCC weather data  
+head will show the first 6 rows
+```{r inspect data}
+head(KouchWeatherDay)
+
+```
+
+## Save Kouchibouguac weather data - quick access for further analysis
+```{r save data}
+saveRDS(KouchWeatherDay, file = file.path(TidiedData, paste("KouchWeatherDay", ".Rds", sep = ""), fsep = .Platform$file.sep))
+                                                
+```
+
+## Download Environment Canada weather data - Shediac
+ECCC has shellfish survey data for Shediac Bay (Parlee Beach Provincial Park) starting in 1988 to 2018 (database last accessed September 2021; updated every 3 years i.e. winter 2021). 
+NB Dept of Health Recreational Beach Water Quality Monitoring website has data from 2017-2023. 
+Access daily weather data for date range 1990-2023.
+*Note - Parlee Beach and Shediac Bay share same weather station data.
+```{r}
+#This weather station ID contains data ranging from years 1939 to 2012 - call years 1990 to 2012: 
+ShediacWeather1990Day <- weathercan::weather_dl(station_ids = 6207, start =  "1990-01-01", interval = "day")
+
+#This weather station ID contains data ranging from years 2012 to 2023; call years 2012 to 2022: 
+ShediacWeather2012Day <- weathercan::weather_dl(station_ids = 50309, start =  "2012-01-01", end = "2023-12-31", interval = "day")
+
+#Combine 2 data frames with the same column names using rbind: 
+
+# combine by row
+ShediacWeatherDay <- rbind(ShediacWeather1990Day, ShediacWeather2012Day)
+
+# output
+#View(ShediacWeatherDay)
+#write.csv(ShediacWeatherDay, file = file.path(DataIn, paste("ShediacWeatherDay", ".csv", sep = ""), fsep = .Platform$file.sep), row.names=FALSE)
+   
+```
+
+```{r set timezone}
+#force_tz is a lubridate function to set a timezone for daily measurements
+
+ShediacWeatherDay <- ShediacWeatherDay %>%
+  mutate(date = force_tz(ymd(date),"America/Halifax")) %>%
+  mutate(precip_lag24 = lag(total_precip, n = 1L)) %>%
+  mutate(precip_lag48 = lag(total_precip, n = 2L)) %>%
+  mutate(precip_sum48 = total_precip + precip_lag24) %>%
+  mutate(precip_prior48 = precip_lag24 + precip_lag48) %>%
+  mutate(precip_sum72 = total_precip + precip_lag24 + precip_lag48) %>%
+  mutate(spd_max_gust_lag24 = lag(spd_max_gust, n = 1L)) %>%
+  mutate(spd_max_gust_lag48 = lag(spd_max_gust, n = 2L)) %>%
+  mutate(spd_max_gust_AVG48 = (spd_max_gust + spd_max_gust_lag24)/2) %>%
+  mutate(spd_max_gust_AVG72 = (spd_max_gust + spd_max_gust_lag24 + spd_max_gust_lag48)/3) %>%
+  mutate(mean_temp_lag24 = lag(mean_temp, n = 1L)) %>%
+  mutate(mean_temp_lag48 = lag(mean_temp, n = 2L)) %>%
+  mutate(mean_temp_AVG48 = (mean_temp + mean_temp_lag24)/2) %>%
+  mutate(mean_temp_prior48 = (mean_temp_lag24 + mean_temp_lag48)/2) %>%
+  mutate(mean_temp_AVG72 = (mean_temp + mean_temp_lag24 + mean_temp_lag48)/3)
+ 
+```
+
+## Inspect the imported ECCC weather data  
+head will show the first 6 rows
+```{r inspect data}
+head(ShediacWeatherDay)
+
+```
+
+## Save Shediac weather data - quick access for further analysis
+```{r save data}
+saveRDS(ShediacWeatherDay, file = file.path(TidiedData, paste("ShediacWeatherDay", ".Rds", sep = ""), fsep = .Platform$file.sep))
+                                             
+```
+

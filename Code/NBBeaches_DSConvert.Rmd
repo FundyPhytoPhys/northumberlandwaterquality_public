@@ -1,0 +1,413 @@
+---
+title: "NBBeaches_DSConvert"
+author: 
+- Miranda Corkum^1^
+- Da Kyung Angela Kwon^1^
+- Douglas Campbell^1^*
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+bibliography: [RPackageCitations.bib, packages.bib]
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by the Canada Research Chairs.
+NO was supported by 
+DAC was supported by the Canada Research Chairs.
+
+
+# Introduction
+
+This script uses packages to import and tidy New Brunswick Provincial Park Beach monitoring data (https://beaches.gnb.ca). Data is downloaded manually as .xlsx, saved as .csv (DataIn/"Parlee_Status_2022_23.csv", "Parlee_Data_2022_23.csv") and imported into R for tidying and conversion to DataStream upload format (https://atlanticdatastream.ca). Here Parlee Beach Provincial Park data is imported for years 2022-23, tidied and saved as TidiedData/"Parlee_2022_23.csv" for direct upload to DataStream.
+
+# Materials and Methods
+
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+Set up libraries (or 'packages') - these contain additions to base R
+Install all the packages in the tidyverse by running install. packages("tidyverse"). Run library(tidyverse) to load the core tidyverse and make it available in your current R session.
+Note - lubridate is now part of Tidyverse version 2 or later.
+```{r load libraries, include = FALSE}
+library(tidyverse)
+
+```
+
+## Citations of software packages
+Analysis was done using the 'tidyverse' [@R-tidyverse] package. 
+```{r cite packages}
+knitr::write_bib(c('tidyverse'), 'packages.bib')
+```
+
+## Project Variables  
+Assign project-specific values to variables
+```{r set variables}
+Project <- "northumberlandwaterquality"
+DataIn <- file.path("..", "DataIn")
+ProcessedData <- file.path("..", "ProcessedData")
+Figures <- file.path("..", "Figures")
+TidiedData <- file.path("..", "TidiedData")
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+
+```
+
+## Import two data objects previously downloaded from New Brunswick Provincial Park Beach site (NB Department of Health) and stored as .csv
+a) E. coli and Enterococcus data 
+b) beach closure data
+```{r read csv}
+ParleeData <- read_csv(file = file.path(DataIn, "Parlee_Data_2022_23.csv", fsep =.Platform$file.sep))
+#ParleeStatus <- read_csv(file = file.path(DataIn, "Parlee_Status_2022_23.csv", fsep =.Platform$file.sep))
+```
+
+## Save the imported data as .Rds for further data exploration (allows for rapid R import).
+```{r save rds}
+saveRDS(ParleeData, file = file.path(DataIn, paste("Parlee_Data_2022_23", ".Rds", sep = ""), fsep = .Platform$file.sep))
+#saveRDS(ParleeStatus, file = file.path(DataIn, paste("Parlee_Status_2022_23", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+## Join two dataframes by matching "Date" columns.
+Note: Bacteria samples are collected daily in 5 different locations at Parlee Beach. Beach status is reported daily and is based on results from samples collected the day before.
+```{r join dataframes}
+# ParleeDataAll <- ParleeData %>% 
+#     full_join(x=., y=ParleeStatus, by = c("Result Date" = "Advisory Date")) #%>%
+#     #filter(!is.na(Date))
+# 
+# #colnames(ParleeDataAll)
+# tibble(ParleeDataAll)
+```
+
+NB Government Parlee Beach Stations:
+64244
+64245
+64246
+64247
+64248
+
+These stations correspond to stations 1 through 5 and previously recorded (DataStream) lat/long values. 
+
+Station  1	Parlee Beach Provincial Park	46.241132	-64.512422
+Station  2	Parlee Beach Provincial Park	46.240904	-64.510715
+Station  3	Parlee Beach Provincial Park	46.240383	-64.50906
+Station  4	Parlee Beach Provincial Park	46.239975	-64.507346
+Station  5	Parlee Beach Provincial Park	46.23963	-64.5056
+
+## Sub values for "Station" column.
+```{r sub values}
+ParleeData$Station[ParleeData$Station==64244]  <- "Station 1" 
+ParleeData$Station[ParleeData$Station==64245]  <- "Station 2" 
+ParleeData$Station[ParleeData$Station==64246]  <- "Station 3" 
+ParleeData$Station[ParleeData$Station==64247]  <- "Station 4" 
+ParleeData$Station[ParleeData$Station==64248]  <- "Station 5" 
+```
+
+
+## Add columns for lat/long - create new dataframe
+MonitoringLocationLatitude
+MonitoringLocationLongitude
+```{r create dataframe}
+MonitoringLocationLatitude <- c(46.241132, 46.240904, 46.240383, 46.239975, 46.23963)
+MonitoringLocationLongitude <- c(-64.512422, -64.510715, -64.50906, -64.507346, -64.5056)
+Station <- c('Station 1','Station 2','Station 3','Station 4','Station 5')
+
+latlong <- data.frame(MonitoringLocationLatitude,MonitoringLocationLongitude,Station)
+
+```
+
+
+```{r merge dataframes}
+
+ParleeData <- left_join(ParleeData, latlong, by="Station")
+dim(ParleeData)
+
+```
+
+## Select and rename relevant columns. Tell R to recognize the date column as "date". Create separate dataframes for both E. coli and Enterococcus data. Remove rows with no data (i.e. September 15, 2023)
+
+```{r column select rename E. coli}
+Parlee_Ecoli <- ParleeData %>%
+  select("Result Date", "E. coli - MPN Flag", "E. coli - MPN MPN/100ml", "Station", "MonitoringLocationLatitude", "MonitoringLocationLongitude") %>%
+  rename("ActivityStartDate" = "Result Date", "ResultDetectionCondition" = "E. coli - MPN Flag", "ResultValue" = "E. coli - MPN MPN/100ml", "MonitoringLocationID" = "Station") %>%
+  filter((!is.na(ResultValue))) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+
+  #select("Result Date", "E. coli - MPN Flag", "E. coli - MPN MPN/100ml", "Station", "Beach Status") %>%
+  #rename("ActivityStartDate" = "Result Date", "ResultDetectionCondition" = "E. coli - MPN Flag", "ResultValue" = "E. coli - MPN MPN/100ml", "MonitoringLocationID" = "Station", "ResultComment" = "Beach Status") %>%
+
+#tibble(Parlee_Ecoli)
+```
+
+
+```{r column select rename Enterococcus}
+Parlee_Entero <- ParleeData %>%
+  select("Result Date", "Enterococcus  Flag", "Enterococcus  MPN/100ml", "Station", "MonitoringLocationLatitude", "MonitoringLocationLongitude") %>%
+  rename("ActivityStartDate" = "Result Date", "ResultDetectionCondition" = "Enterococcus  Flag", "ResultValue" = "Enterococcus  MPN/100ml", "MonitoringLocationID" = "Station") %>%
+  filter((!is.na(ResultValue))) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+  #select("Result Date", "Enterococcus  Flag", "Enterococcus  MPN/100ml", "Station", "Beach Status") %>%
+  #rename("ActivityStartDate" = "Result Date", "ResultDetectionCondition" = "Enterococcus  Flag", "ResultValue" = "Enterococcus  MPN/100ml", "MonitoringLocationID" = "Station", "ResultComment" = "Beach Status") %>%
+
+#tibble(Parlee_Entero)
+```
+
+
+## Add all DataStream columns
+Will need to repeat this chunk for each new location (i.e. "Murray Beach Provincial Park") or parameter (i.e. *E. coli* and *Enterococcus*) to be added. If adding many locations or parameters, should write a function instead. For now, adding only 2 parameters, this strategy works.
+
+Note: DO NOT INCLUDE 2 columns MonitoringLocationVerticalMeasure, MonitoringLocationVerticalUnit (previously included in DataStream Template but now obsolete) 
+```{r add columns E. coli}
+#define new columns to add
+  DatasetName <- "Mount Allison Phyto Lab Data"
+  MonitoringLocationName <- "Parlee Beach Provincial Park"
+  MonitoringLocationHorizontalCoordinateReferenceSystem <- "UNKWN"
+  MonitoringLocationHorizontalAccuracyMeasure <- NA
+  MonitoringLocationHorizontalAccuracyUnit <- NA
+  MonitoringLocationType <- "Ocean"	
+  ActivityType <- "Sample-Routine"	
+  ActivityMediaName	<- "Ocean Water"
+  ActivityStartTime <- NA
+  ActivityEndDate	<- NA
+  ActivityEndTime	<- NA
+  ActivityDepthHeightMeasure <- "-0.2"	
+  ActivityDepthHeightUnit	<- "m"
+  SampleCollectionEquipmentName	<- "Water Bottle"
+  CharacteristicName <- "Escherichia coli"
+  MethodSpeciation <- NA	
+  ResultSampleFraction <- NA	
+  ResultUnit <- "MPN/100mL"	
+  ResultValueType	<- "Actual"
+  #ResultDetectionCondition <- NA	
+  ResultDetectionQuantitationLimitMeasure <- NA	
+  ResultDetectionQuantitationLimitUnit <- NA	
+  ResultDetectionQuantitationLimitType <- NA	
+  ResultStatusID <- NA	
+  ResultComment <- "New Brunswick Department of Health, ref43"	
+  ResultAnalyticalMethodID <- "9230D"	
+  ResultAnalyticalMethodContext	<- "SM"
+  ResultAnalyticalMethodName <- "IDEXX Enterolert Test Kit"	
+  AnalysisStartDate	<- NA
+  AnalysisStartTime	<- NA
+  AnalysisStartTimeZone	<- NA
+  LaboratoryName <- "RPC Moncton"	
+  LaboratorySampleID <- NA
+
+#bind columns together
+Parlee_Ecoli <- cbind(Parlee_Ecoli, DatasetName, MonitoringLocationName, MonitoringLocationHorizontalCoordinateReferenceSystem, MonitoringLocationHorizontalAccuracyMeasure, MonitoringLocationHorizontalAccuracyUnit, MonitoringLocationType, ActivityType, ActivityMediaName, ActivityStartTime, ActivityEndDate, ActivityEndTime, ActivityDepthHeightMeasure, ActivityDepthHeightUnit, SampleCollectionEquipmentName, CharacteristicName, MethodSpeciation, ResultSampleFraction, ResultUnit, ResultValueType, ResultDetectionQuantitationLimitMeasure, ResultDetectionQuantitationLimitUnit, ResultDetectionQuantitationLimitType, ResultStatusID, ResultComment, ResultAnalyticalMethodID, ResultAnalyticalMethodContext, ResultAnalyticalMethodName, AnalysisStartDate, AnalysisStartTime, AnalysisStartTimeZone, LaboratoryName, LaboratorySampleID)
+
+```
+
+
+```{r add columns Entero}
+#define new columns to add
+  DatasetName <- "Mount Allison Phyto Lab Data"
+  MonitoringLocationName <- "Parlee Beach Provincial Park"
+  MonitoringLocationHorizontalCoordinateReferenceSystem <- "UNKWN"
+  MonitoringLocationHorizontalAccuracyMeasure <- NA
+  MonitoringLocationHorizontalAccuracyUnit <- NA
+  MonitoringLocationType <- "Ocean"	
+  ActivityType <- "Sample-Routine"	
+  ActivityMediaName	<- "Ocean Water"
+  ActivityStartTime <- NA
+  ActivityEndDate	<- NA
+  ActivityEndTime	<- NA
+  ActivityDepthHeightMeasure <- "-0.2"	
+  ActivityDepthHeightUnit	<- "m"
+  SampleCollectionEquipmentName	<- "Water Bottle"
+  CharacteristicName <- "Enterococcus"
+  MethodSpeciation <- NA	
+  ResultSampleFraction <- NA	
+  ResultUnit <- "MPN/100mL"	
+  ResultValueType	<- "Actual"
+  #ResultDetectionCondition <- NA	
+  ResultDetectionQuantitationLimitMeasure <- NA	
+  ResultDetectionQuantitationLimitUnit <- NA	
+  ResultDetectionQuantitationLimitType <- NA	
+  ResultStatusID <- NA	
+  ResultComment <- NA	
+  ResultAnalyticalMethodID <- NA	
+  ResultAnalyticalMethodContext	<- NA
+  ResultAnalyticalMethodName <- "Multiple Tube Test"	
+  AnalysisStartDate	<- NA
+  AnalysisStartTime	<- NA
+  AnalysisStartTimeZone	<- NA
+  LaboratoryName <- "Environment and Climate Change Canada Microbiology Lab"	
+  LaboratorySampleID <- NA
+
+#bind columns together
+Parlee_Entero <- cbind(Parlee_Entero, DatasetName, MonitoringLocationName, MonitoringLocationHorizontalCoordinateReferenceSystem, MonitoringLocationHorizontalAccuracyMeasure, MonitoringLocationHorizontalAccuracyUnit, MonitoringLocationType, ActivityType, ActivityMediaName, ActivityStartTime, ActivityEndDate, ActivityEndTime, ActivityDepthHeightMeasure, ActivityDepthHeightUnit, SampleCollectionEquipmentName, CharacteristicName, MethodSpeciation, ResultSampleFraction, ResultUnit, ResultValueType, ResultDetectionQuantitationLimitMeasure, ResultDetectionQuantitationLimitUnit, ResultDetectionQuantitationLimitType, ResultStatusID, ResultComment, ResultAnalyticalMethodID, ResultAnalyticalMethodContext, ResultAnalyticalMethodName, AnalysisStartDate, AnalysisStartTime, AnalysisStartTimeZone, LaboratoryName, LaboratorySampleID)
+
+```
+
+
+#Reorder columns to agree with DataStream
+```{r reorder columns E. coli}
+col_order <- c("DatasetName", 
+           "MonitoringLocationID",
+           "MonitoringLocationName", 
+           "MonitoringLocationLatitude",
+           "MonitoringLocationLongitude",
+           "MonitoringLocationHorizontalCoordinateReferenceSystem", 
+           "MonitoringLocationHorizontalAccuracyMeasure", 
+           "MonitoringLocationHorizontalAccuracyUnit", 
+           "MonitoringLocationType", 
+           "ActivityType", 
+           "ActivityMediaName", 
+           "ActivityStartDate",
+           "ActivityStartTime",
+           "ActivityEndDate", 
+           "ActivityEndTime", 
+           "ActivityDepthHeightMeasure", 
+           "ActivityDepthHeightUnit", 
+           "SampleCollectionEquipmentName", 
+           "CharacteristicName", 
+           "MethodSpeciation", 
+           "ResultSampleFraction", 
+           "ResultValue",
+           "ResultUnit", 
+           "ResultValueType", 
+           "ResultDetectionCondition", 
+           "ResultDetectionQuantitationLimitMeasure", 
+           "ResultDetectionQuantitationLimitUnit", 
+           "ResultDetectionQuantitationLimitType", 
+           "ResultStatusID", 
+           "ResultComment", 
+           "ResultAnalyticalMethodID", 
+           "ResultAnalyticalMethodContext", 
+           "ResultAnalyticalMethodName", 
+           "AnalysisStartDate", 
+           "AnalysisStartTime", 
+           "AnalysisStartTimeZone", 
+           "LaboratoryName", 
+           "LaboratorySampleID")
+
+Parlee_Ecoli <- Parlee_Ecoli[, col_order]
+
+```
+
+
+```{r reorder columns Entero}
+
+col_order <- c("DatasetName", 
+           "MonitoringLocationID",
+           "MonitoringLocationName", 
+           "MonitoringLocationLatitude",
+           "MonitoringLocationLongitude",
+           "MonitoringLocationHorizontalCoordinateReferenceSystem", 
+           "MonitoringLocationHorizontalAccuracyMeasure", 
+           "MonitoringLocationHorizontalAccuracyUnit", 
+           "MonitoringLocationType", 
+           "ActivityType", 
+           "ActivityMediaName", 
+           "ActivityStartDate",
+           "ActivityStartTime",
+           "ActivityEndDate", 
+           "ActivityEndTime", 
+           "ActivityDepthHeightMeasure", 
+           "ActivityDepthHeightUnit", 
+           "SampleCollectionEquipmentName", 
+           "CharacteristicName", 
+           "MethodSpeciation", 
+           "ResultSampleFraction", 
+           "ResultValue",
+           "ResultUnit", 
+           "ResultValueType", 
+           "ResultDetectionCondition", 
+           "ResultDetectionQuantitationLimitMeasure", 
+           "ResultDetectionQuantitationLimitUnit", 
+           "ResultDetectionQuantitationLimitType", 
+           "ResultStatusID", 
+           "ResultComment", 
+           "ResultAnalyticalMethodID", 
+           "ResultAnalyticalMethodContext", 
+           "ResultAnalyticalMethodName", 
+           "AnalysisStartDate", 
+           "AnalysisStartTime", 
+           "AnalysisStartTimeZone", 
+           "LaboratoryName", 
+           "LaboratorySampleID")
+
+Parlee_Entero <- Parlee_Entero[, col_order]
+
+```
+
+
+## Set ResultDetectionCondition 
+FIX - "ResultUnit" should be blank if no "ResultValue"
+Note: units of MPN/100mL used for both E. coli and Enterococcus in these latest years (previously E. coli was cfu/100mL)
+Limit of detection for E. coli is also higher: 10 MPN/100mL
+
+```{r set ResultDetectionCondition E. coli}
+Parlee_Ecoli <- Parlee_Ecoli %>%
+  mutate(ResultDetectionCondition = if_else(ResultDetectionCondition == "<", "Below Detection/Quantification Limit", "Below Detection/Quantification Limit"),
+         ResultDetectionQuantitationLimitMeasure = if_else(ResultDetectionCondition == "<","NA", "10"),
+         ResultDetectionQuantitationLimitUnit = if_else(ResultDetectionCondition == "<", "NA", "MPN/100mL"),
+         ResultDetectionQuantitationLimitType = if_else (ResultDetectionCondition == "<", "NA", "Reporting Limit"),
+         ResultValue = if_else(is.na(ResultDetectionCondition), as.integer(ResultValue), NA_integer_),
+         ResultUnit = if_else(is.na(ResultValue), NA_character_, ResultUnit))
+
+Parlee_Ecoli
+
+```
+
+
+```{r set ResultDetectionCondition Entero}
+Parlee_Entero <- Parlee_Entero %>%
+  mutate(ResultDetectionCondition = if_else(ResultDetectionCondition == "<", "Below Detection/Quantification Limit", "Below Detection/Quantification Limit"),
+         ResultDetectionQuantitationLimitMeasure = if_else(ResultDetectionCondition == "<","NA", "10"),
+         ResultDetectionQuantitationLimitUnit = if_else(ResultDetectionCondition == "<", "NA", "MPN/100mL"),
+         ResultDetectionQuantitationLimitType = if_else (ResultDetectionCondition == "<", "NA", "Reporting Limit"),
+         ResultValue = if_else(is.na(ResultDetectionCondition), as.integer(ResultValue), NA_integer_),
+         ResultUnit = if_else(is.na(ResultValue), NA_character_, ResultUnit))
+
+Parlee_Entero
+
+```
+
+
+## Combine reformatted Parlee Beach E. coli and Enterococcus datasets
+```{r bind}
+Parlee_2022_23 <- rbind(Parlee_Ecoli, Parlee_Entero)
+
+```
+
+## Remove NAs to allow for upload to DataStream.
+```{r remove NAs}
+Parlee_2022_23 <- Parlee_2022_23 %>% 
+  replace(is.na(Parlee_2022_23), "")
+
+```
+
+## Save as .Rds for later use
+
+```{r save .Rds}
+#saveRDS(Parlee_2022_23, file = file.path(TidiedData, paste("Parlee_2022_23", ".Rds", sep = ""), fsep = .Platform$file.sep))
+write.csv(Parlee_2022_23, file = file.path(TidiedData, paste("Parlee_2022_23", ".csv", sep = ""), fsep = .Platform$file.sep), row.names=FALSE)
+```
+
+NOTE: the 2 MPN limit of detection for ECCC shellfish survey data was not recorded using the result detection quantitation limit columns in the "Mount Allison Phyto Lab Data" currently on DataStream. This breakdown was therefore not include here for consistency and also to avoid removing measurements from the analysis (i.e. data below reporting limit has a "ResultValue" of "blank" and the fact that a measurement was collected on a given day would be lost). While the limit columns are not required for the CSM 2023 poster data analysis, they should be added if this dataset is uploaded to DataStream. There is a code chunk for this formatting in Angela's/Doug's old .Rmd "DS_Conversion.Rmd".
