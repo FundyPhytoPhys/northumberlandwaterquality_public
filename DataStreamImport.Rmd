@@ -1,0 +1,190 @@
+---
+title: "DataStreamImport"
+author: 
+- Miranda Corkum^1^
+- Naaman Omar^1^
+- Douglas Campbell^1^*
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+bibliography: [RPackageCitations.bib, packages.bib]
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by the Canada Research Chairs.
+NO was supported by 
+DAC was supported by the Canada Research Chairs.
+
+
+# Introduction
+
+This script uses packages to support direct import of marine microbial contamination data via public API from DataStream (https://atlanticdatastream.ca, "Mount Allison Phyto Lab Data" dataset). The imported data (DataIn/"DataStreamALL.Rds") contains ECCC Shellfish Survey data only until year 2015. Code/"ShellfishSurvey_DSConvert.Rmd" generates DataStream formatted ECCC Shellfish Survey data for years 2016-2022 for Kouchibouguac and Shediac Bays (ProcessedData/"ECCCDataKouchShediac.Rds"). The DataStream and updated ECCC Shellfish Survey datasets are combined, subset into three Northumberland Strait study sites (Kouchibouguac Bay, Shediac Bay and Parlee Beach Provincial Park), and saved as .Rds files (TidiedData/"KouchData.Rds", "ShediacData.Rds", "ParleeData.Rds") for further manipulation in Code/"DataClean.Rmd".
+
+# Materials and Methods
+
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+Set up libraries (or 'packages') - these contain additions to base R
+Install all the packages in the tidyverse by running install. packages("tidyverse"). Run library(tidyverse) to load the core tidyverse and make it available in your current R session.
+Note - lubridate is now part of Tidyverse version 2 or later.
+```{r load libraries, include = FALSE}
+library(tidyverse)
+
+```
+
+## Access data - DataStream
+Install the 'datastreamr' package through Github to be able to read AtlanticDataStream water quality data into R. 
+Install first time only. Once installed, simply load the library.
+```{r install datastreamr}
+#devtools::install_github("gordonfn/datastreamr", force=TRUE)
+library(datastreamr)
+
+```
+
+## Citations of software packages
+Analysis was done using the 'tidyverse' [@R-tidyverse] and 'datastreamr' [@R-datastreamr] package. 
+Keep this chunk commented out or it will overwrite the final manuscript version of the .bib file.
+```{r cite packages}
+#knitr::write_bib(c('tidyverse', 'datastreamr'), 'packages.bib')
+```
+
+## Project Variables  
+Assign project-specific values to variables
+*Processed data contains any data that has been modified to include new columns etc. It can also contain the output of many files merged together.
+*Tidied data contains a clean version of the raw data (Correct file names, dates in the right format etc).
+*Do not use hard file path - not cross-platform compatible - use R functions to construct.
+```{r set variables}
+Project <- "northumberlandwaterquality"
+DataIn <- file.path("..", "DataIn")
+ProcessedData <- "ProcessedData"
+Figures <- file.path("..", "Figures")
+TidiedData <- file.path("..", "TidiedData")
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+
+```
+
+## Data Import using API - full dataset
+Query "Mount Allison Phyto Lab" data set on Atlantic Data Stream and download entire data set for future filtering (i.e. for a given MonitoringLocation) and analysis.
+*This chunk from Meghan McLeod, DataStream, August 28, 2023
+*ONLY RUN ONCE*
+```{r import data all loc IDs}
+
+# # Collect all location IDs of interest
+# Locs_of_interest = ds_locations("GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",filter="DOI=10.25976/bqyj-1880",select='Id')[,1]
+# 
+# #Iterate through these location IDs and pull the data into one large table
+# 
+# data = data.frame(matrix(ncol = 42, nrow = 0))
+# 
+# #Continue to append the rest of the data
+# for (i in 1:length(Locs_of_interest)){
+#   thisFilter=paste0("LocationId='",Locs_of_interest[i],"'")
+#   data = rbind(data,ds_records(api_token="GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",filter=c(thisFilter)))
+# }
+
+#Attributation -> Attribution Licence (ODC-By) v1.0 "https://opendatacommons.org/licenses/by/1-0/"
+#DOI -> https://doi.org/10.25976/bqyj-1880
+#License -> API 
+#Citation -> Mount Allison University, Campbell Lab. 2022-08-31. "Mount Allison Phyto Lab Data" (dataset). 4.0.0. DataStream. https://doi.org/10.25976/bqyj-1880.
+
+```
+
+Save the imported data for further analyses.
+.RDS is an internal R data format for rapid re-import into other RNotebooks or scripts.
+*ONLY RUN ONCE*
+```{r save data}
+#saveRDS(data, file = file.path(DataIn, paste("DataStreamALL", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+## Load previously imported (API) DataStream dataset and new tidied ECCC Shellfish Survey dataset (years 2016-2022). 
+```{r read .Rds}
+DataStreamALL <- readRDS(file.path(DataIn,"DataStreamALL.Rds")) %>%
+  filter(MonitoringLocationName %in% c("Kouchibouguac Bay", "Shediac Bay", "Parlee Beach Provincial Park")) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+ECCCDataKouchShediac <- readRDS(file.path(TidiedData,"ECCCDataKouchShediac.Rds")) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+```
+
+Note: API accessed data has two leading columns that are not present in direct .csv download: "Id" and "DOI". "Id" is an internal row number assigned by DataStream and the single "DOI" applies to entire dataset.
+Remove to simplify downstream dataset merge.
+Remove 2 vertical measure columns as these are no longer included in DataStream upload template. *Note - this is a bug on DataStream's end; our dataset is uploaded without these columns yet they are still returning on API access.
+```{r remove columns}
+DataStreamALL <- select(DataStreamALL, -c(Id, DOI, MonitoringLocationVerticalMeasure, MonitoringLocationVerticalUnit))
+
+```
+
+Combine DataSteam dataset with new ECCC Shellfish data (years 2016-2022)
+```{r bind}
+DataStreamALL2 <- rbind(DataStreamALL, ECCCDataKouchShediac)
+```
+
+## Subset data - filter for "Kouchibouguac Bay": "Fecal Coliform"
+```{r subset data kouch}
+KouchData <- filter(DataStreamALL2, MonitoringLocationName == "Kouchibouguac Bay" & ActivityStartDate >= "2010-01-01" & CharacteristicName == "Fecal Coliform") 
+
+KouchData <- KouchData %>%
+  map_df(~.x) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+```
+
+
+## Subset data - filter for "Shediac Bay": "Fecal Coliform" & "Escherichia coli" NOT "Total Coliform" 
+(Enterococcus data exists for this location - do NOT include here)
+```{r subset data shediac}
+ShediacData <- filter(DataStreamALL2, MonitoringLocationName == "Shediac Bay" & ActivityStartDate >= "2010-01-01" & (CharacteristicName == "Fecal Coliform" | CharacteristicName =="Escherichia coli") )
+
+ShediacData <- ShediacData %>%
+  map_df(~.x) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+```
+
+## Subset data - filter for "Parlee Beach Provincial Park": "Fecal Coliform" & "Escherichia coli" NOT "Total Coliform"
+(Enterococcus data exists for this location - do NOT include here)
+```{r subset data parlee}
+ParleeData <- filter(DataStreamALL2, MonitoringLocationName == "Parlee Beach Provincial Park" & ActivityStartDate >= "2010-01-01" & (CharacteristicName == "Fecal Coliform" | CharacteristicName =="Escherichia coli"))
+
+ParleeData <- ParleeData %>%
+  map_df(~.x) %>%
+  mutate(ActivityStartDate = ymd(ActivityStartDate))
+
+```
+
+## Save the data subsets for further data exploration
+```{r save rds}
+saveRDS(KouchData, file = file.path(TidiedData, paste("KouchData", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+saveRDS(ShediacData, file = file.path(TidiedData, paste("ShediacData", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+saveRDS(ParleeData, file = file.path(TidiedData, paste("ParleeData", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+

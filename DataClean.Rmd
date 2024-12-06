@@ -1,0 +1,199 @@
+---
+title: "DataClean"
+author: 
+- Miranda Corkum^1^
+- Naaman Omar^1^
+- Douglas Campbell^1^*
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+bibliography: [RPackageCitations.bib, packages.bib]
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by the Canada Research Chairs.
+NO was supported by 
+DAC was supported by the Canada Research Chairs.
+
+
+# Introduction
+
+This script uses packages to combine marine microbial contamination data from DataStream (https://atlanticdatastream.ca) and weather data from Environment and Climate Change Canada (https://climate.weather.gc.ca/historical_data/search_historic_data_e.html) previously imported via API (Code/"DataStreamImport.Rmd", "WeatherCanImport.Rmd") at three sites on the Northumberland Strait: Shediac Bay, Kouchibouguac Bay and Parlee Beach Provincial Park. This combined bacteria/weather dataset (ProcessedData/"KouchShediacParleeData.Rds") is loaded into a Shiny app (Code/"Facet_app_WQ.R") to visualize water quality patterns. Based on those visualizations, statistical models and plots are then generated (see Code/"DataProcess.Rmd").
+
+# Materials and Methods
+
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+Set up libraries (or 'packages') - these contain additions to base R
+Install all the packages in the tidyverse by running install. packages("tidyverse"). Run library(tidyverse) to load the core tidyverse and make it available in your current R session.
+Note - lubridate is now part of Tidyverse version 2 or later.
+```{r load libraries, include = FALSE}
+library(tidyverse)
+
+```
+
+## Citations of software packages
+Analysis was done using the 'tidyverse' [@R-tidyverse] package. 
+Keep this chunk commented out or it will overwrite the final manuscript version of the .bib file.
+```{r cite packages}
+#knitr::write_bib(c('tidyverse'), 'packages.bib')
+
+#To cite current version of R and R Studio:
+#citation()
+#RStudio.Version()
+
+```
+
+## Project Variables  
+Assign project-specific values to variables
+*Processed data contains any data that has been modified to include new columns etc. It can also contain the output of many files merged together.
+*Tidied data contains a clean version of the raw data (Correct file names, dates in the right format etc).
+*Do not use hard file path - not cross-platform compatible - use R functions to construct...
+```{r set variables}
+Project <- "northumberlandwaterquality"
+DataIn <- file.path("..", "DataIn")
+ProcessedData <- file.path("..", "ProcessedData")
+Figures <- file.path("..", "Figures")
+TidiedData <- file.path("..", "TidiedData")
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+
+```
+
+# Define bacterial thresholds for Health Canada Recreation (higher) and Shellfish Survey (lower)
+```{r set thresholds}
+threshold_1 <- 200
+threshold_2 <- 43
+```
+
+## Kouchibouguac - Merge DataStream (bacteria) and ECCC (weather) datasets into a single file 
+left_join will filter out from y any variable not in x (x dataframe is TidyData; y dataframe is KouchWeatherDay)
+right_join does opposite of left_join
+full_join will integrate all the data from y into x but will not filter out other data
+Merge ECCC weather "date" column into DS "ActivityStartDate" column i.e. weather data only for dates with bacteria data
+
+```{r read and join data kouch}
+KouchData <- readRDS(file.path(TidiedData,"KouchData.Rds"))
+
+KouchWeatherDay <- readRDS(file.path(TidiedData,"KouchWeatherDay.Rds"))
+
+KouchDataAll <- KouchData %>% 
+    full_join(x=., y=KouchWeatherDay, by = c("ActivityStartDate" = "date")) %>%
+    filter(!is.na(DatasetName))
+
+```
+
+## Save new combined bacteria/weather data file for Kouchibouguac Bay
+Q: Do I need to save these intermediary files? 
+Q: Use locales here instead of hard path to place name?
+```{r save kouch data}
+saveRDS(KouchDataAll, file = file.path(ProcessedData, paste("KouchDataAll", ".Rds", sep = ""), fsep = .Platform$file.sep))
+```
+
+## Merge DataStream (bacteria) and ECCC (weather) datasets into a single file for Shediac
+left_join will filter out from y any variable not in x (x dataframe is TidyData2; y dataframe is ShediacWeatherDay)
+right_join - does opposite of left_join
+full_join will integrate all the data from y into x but will not filter out other data
+
+```{r read and join data shediac}
+ShediacData <- readRDS(file.path(TidiedData,"ShediacData.Rds"))
+
+ShediacWeatherDay <- readRDS(file.path(TidiedData,"ShediacWeatherDay.Rds"))
+
+ShediacDataAll <- ShediacData %>% 
+    full_join(x=., y=ShediacWeatherDay, by = c("ActivityStartDate" = "date")) %>%
+    filter(!is.na(DatasetName))
+
+```
+
+## Save new combined bacteria/weather data file for Shediac Bay
+```{r save Shediac data}
+saveRDS(ShediacDataAll, file = file.path(ProcessedData, paste("ShediacDataAll", ".Rds", sep = ""), fsep = .Platform$file.sep))
+```
+
+## Merge DataStream (bacteria) and ECCC (weather) datasets into a single file for Parlee Beach Provincial Park (note: Moncton weather station data used for Shediac Bay is the same data for Parlee)
+```{r read and join data parlee}
+ParleeData <- readRDS(file.path(TidiedData,"ParleeData.Rds"))
+
+ParleeDataAll <- ParleeData %>% 
+    full_join(x=., y=ShediacWeatherDay, by = c("ActivityStartDate" = "date")) %>%
+    filter(!is.na(DatasetName))
+
+```
+
+## Save new combined bacteria/weather data file for Parlee Beach Provincial Park
+```{r save Parlee data}
+saveRDS(ParleeDataAll, file = file.path(ProcessedData, paste("ParleeDataAll", ".Rds", sep = ""), fsep = .Platform$file.sep))
+```
+
+## 1) Combine KouchData, ShediacData and Parlee Data to obtain a single dataframe to use in Shiny app data exploration
+## 2) Remove NA columns - drop columns only AFTER merging data, otherwise the dataframes will not bind
+Drop from 80 to 65 columns
+https://community.rstudio.com/t/drop-all-na-columns-from-a-dataframe/5844/6
+## 3) Add column for Julian Day = 66 columns
+## 4) Add column for Health Canada bacteria limit = 67 columns
+
+Add lines to deal with Result Values below limit of detection:
+1) If ResultValue is zero, report Bacterial_Count as "1";
+2) If ResultValue is NA AND ResultDetectionQuantitationMeasure is 2, report Bacterial_Count as "1";
+3) If ResultValue is NA AND ResultDetectionQuantitationMeasure is 10, report Bacterial_Count as "5";
+4) If ResultValue is NA AND ResultDetectionQuantitationMeasure is 400, report Bacterial_Count as "400".
+
+```{r bind dataframes}
+KouchShediacParleeData <- rbind(KouchDataAll, ShediacDataAll, ParleeDataAll)
+KouchShediacParleeData <- KouchShediacParleeData %>%
+  discard(~all(is.na(.x))) %>%
+  map_df(~.x) %>%
+  mutate(JulianDay = yday(ActivityStartDate)) %>%
+  mutate(ResultValueColour = case_when(ResultValue >= threshold_1 ~ "red",
+                               ResultValue >= threshold_2 ~ "blue",
+                               ResultValue < threshold_2 ~ "black")) %>%
+  mutate(MonitoringLocationNameStrip = case_when(MonitoringLocationName == "Kouchibouguac Bay" ~ "Kouchibouguac Bay", 
+                                                 MonitoringLocationName == "Shediac Bay" ~ "Shediac Bay",
+                                                 MonitoringLocationName == "Parlee Beach Provincial Park" ~ "Parlee Beach")) %>%
+  rename(Measurement_Date = ActivityStartDate) %>%
+  mutate(Bacterial_Count = case_when(is.na(ResultValue) & ResultDetectionQuantitationLimitMeasure == 2 ~ 1,
+                                     is.na(ResultValue) & ResultDetectionQuantitationLimitMeasure == 10 ~ 5,
+                                     is.na(ResultValue) & ResultDetectionQuantitationLimitMeasure == 400 ~ 400,
+                                     ResultValue == 0 ~ 1,
+                                     TRUE~ResultValue)) 
+  
+#names(KouchShediacParleeData)
+
+```
+
+# In order for facet plots to be stacked in correct order in DataProcess.Rmd we need to first reorder station names in new column "MonitoringLocationNameStrip".
+```{r data reorder}
+KouchShediacParleeData$MonitoringLocationNameStrip <- factor(KouchShediacParleeData$MonitoringLocationNameStrip, levels=c('Kouchibouguac Bay', 'Shediac Bay', 'Parlee Beach'))
+```
+
+
+```{r save all data}
+saveRDS(KouchShediacParleeData, file = file.path(ProcessedData, paste("KouchShediacParleeData", ".Rds", sep = ""), fsep = .Platform$file.sep))
+#write.csv(KouchShediacParleeData, file = file.path(ProcessedData, paste("KouchShediacParleeData", ".csv", sep = ""), fsep = .Platform$file.sep), row.names=FALSE)
+
+```
